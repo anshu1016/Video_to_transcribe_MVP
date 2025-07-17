@@ -8,3 +8,17 @@ services:
     envVars:
       - key: SARVAM_API_KEY
         value: 06a7041e-d5c6-4cbc-ba13-41830608b97c
+
+      - key: CLOUDINARY_CLOUD_NAME
+        value: df9d8klxs
+      - key: CLOUDINARY_API_KEY
+        value: 282589174689254
+      - key: CLOUDINARY_API_SECRET
+        value: qJd8KNvp8PvQmFVvCIVs9ewcR3c
+
+      - key: AIRTABLE_API_KEY
+        value: patVsjc0AykGRwvQw.a1a7415e518564a3c5d89e9494b70b36a32c17c65d09f3fbc65cc7fbc1b605ef
+      - key: AIRTABLE_BASE_ID
+        value: appXrWU2V3dK5Rt8v
+      - key: AIRTABLE_TABLE_NAME
+        value: Table 1

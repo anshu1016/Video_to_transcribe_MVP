@@ -5,16 +5,18 @@ from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 from moviepy import VideoFileClip
 from dotenv import load_dotenv
-from utils.audio_processor import process_audio_file
 
+from utils.audio_processor import process_audio_file
+from utils.cloudinary_utils import upload_to_cloudinary
+from utils.airtable_utils import sync_to_airtable
+
+# Load env variables
 load_dotenv()
 
 app = Flask(__name__)
-
-# Configuration
 BASE_FOLDER = 'media'
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv'}
-MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB
+MAX_CONTENT_LENGTH = 500 * 1024 * 1024
 
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 os.makedirs(BASE_FOLDER, exist_ok=True)
@@ -45,40 +47,65 @@ def upload_video():
     if not allowed_file(file.filename):
         return jsonify({"error": "Invalid file type"}), 400
 
-    # Create unique folder per request
+    # Unique session
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     uid = str(uuid.uuid4())[:6]
-    session_folder = os.path.join(BASE_FOLDER, f"{timestamp}_{uid}")
+    base_filename = f"{timestamp}_{uid}"
+    session_folder = os.path.join(BASE_FOLDER, base_filename)
     os.makedirs(session_folder, exist_ok=True)
+    cloudinary_folder = f"video_pipeline/{base_filename}"
 
     # Save video
-    filename = secure_filename(file.filename)
-    video_path = os.path.join(session_folder, filename)
+    ext = os.path.splitext(file.filename)[1]
+    video_filename = f"{base_filename}{ext}"
+    video_path = os.path.join(session_folder, video_filename)
     file.save(video_path)
 
     # Convert to audio
-    audio_filename = "output_audio.wav"
+    audio_filename = f"{base_filename}.wav"
     audio_path = os.path.join(session_folder, audio_filename)
     try:
         convert_video_to_audio(video_path, audio_path)
     except Exception as e:
         return jsonify({"error": f"Audio extraction failed: {str(e)}"}), 500
 
-    # Transcribe audio
+    # Transcribe
+    transcript_filename = f"{base_filename}.txt"
+    transcript_path = os.path.join(session_folder, transcript_filename)
     try:
         transcript = process_audio_file(audio_path, language)
-        transcript_path = os.path.join(session_folder, "transcript.txt")
         with open(transcript_path, 'w', encoding='utf-8') as f:
             f.write(transcript)
     except Exception as e:
         return jsonify({"error": f"Transcription failed: {str(e)}"}), 500
 
+    # Upload to Cloudinary
+    try:
+        video_url = upload_to_cloudinary(video_path, cloudinary_folder, base_filename, resource_type="video")
+        audio_url = upload_to_cloudinary(audio_path, cloudinary_folder, base_filename + "_audio", resource_type="video")
+        transcript_url = upload_to_cloudinary(transcript_path, cloudinary_folder, base_filename + "_transcript", resource_type="raw")
+    except Exception as e:
+        return jsonify({"error": f"Cloudinary upload failed: {str(e)}"}), 500
+
+    # Sync to Airtable ✅ CORRECT CALL HERE
+    try:
+        airtable_record = sync_to_airtable(
+            video_url=video_url,
+            audio_url=audio_url,
+            transcript_url=transcript_url,
+            transcript_text=transcript
+        )
+    except Exception as e:
+        return jsonify({"error": f"Airtable sync failed: {str(e)}"}), 500
+
     return jsonify({
         "message": "Transcription completed successfully",
-        "session_folder": session_folder,
-        "video": filename,
-        "audio": audio_filename,
-        "transcript_file": "transcript.txt"
+        "session_id": base_filename,
+        "video_url": video_url,
+        "audio_url": audio_url,
+        "transcribe_url": transcript_url,
+        "transcript_text": transcript,
+        "airtable_record_id": airtable_record.get("id", "unknown")
     }), 200
 
 if __name__ == '__main__':
