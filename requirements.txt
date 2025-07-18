@@ -8,3 +8,7 @@ cloudinary
 pyairtable
 python-dotenv
 gunicorn
+librosa
+scipy
+numpy  # Required by both librosa & scipy
+soundfile  # Required by librosa for audio I/O
